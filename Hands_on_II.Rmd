@@ -1,0 +1,106 @@
+---
+title: "my title"
+author: "my name (dummy@mail.com)"
+date: "Last update: `r format(Sys.time(), '%d %B, %Y')`"      
+output:
+  html_document:
+    toc: true
+    fig_caption: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Clustering
+
+## **Optional exercise** 
+
+Follow the tutorial from the [clustering section](https://genomicsclass.github.io/book/pages/clustering_and_heatmaps.html) of the book [PH525x series - Biomedical Data Science](http://genomicsclass.github.io/book/). 
+
+Install the package [tissuesGeneExpression](https://github.com/genomicsclass/tissuesGeneExpression) by running in R: 
+
+```{r, eval=F}
+library(devtools)
+install_github("genomicsclass/tissuesGeneExpression")
+```
+
+## Clustering gene expression data in healthy tissues
+
+Download the [data](https://www.ebi.ac.uk/biostudies/arrayexpress/studies/E-MTAB-6081) (design and tpm files) corresponding to the publication [An RNASeq normal tissue atlas for mouse and rat](https://www.nature.com/articles/sdata2017185). 
+Download the [gene expression data](https://storage.googleapis.com/gtex_analysis_v8/rna_seq_data/GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_median_tpm.gct.gz) corresponding to the publication  [The Genotype-Tissue Expression (GTEx) pilot analysis: multitissue gene regulation in humans](https://www.science.org/doi/10.1126/science.1262110) from  the [GTEX portal](https://gtexportal.org/home/datasets)
+
+From GTEX data, keep only tissues belonging to the following categories:  
+
+
+```{r}
+gtex_tissues <-  c("colon", "ileum", "duodenum", "jejunum", "small intestine"  , "muscle", "pancreas", "liver", "stomach",  "kidney",  "quadriceps", "thymus", "heart" ,    "esophagus", "brain" )
+```
+
+**pro tip** Do not manually copy from the column names. Convert all column names from GTEX data to lower case, and split them appropriately.
+
+
+Cluster tissues using gene expression data. Run k-means and hierarchical clustering. For each algorithm, determine the optimal number of clusters. 
+
+
+```{r}
+
+```
+
+Compare the clustering results using both methodologies, and with the tissues/species. Show the results of the final partitions as a table. 
+
+```{r}
+
+```
+
+Plot a heatmap of the 50 genes with top variance over all samples. Add the information about tissue groups and model (human, rat and mouse) as annotations in the heatmap*. 
+
+```{r}
+
+```
+
+
+
+# Exercise 2: Dimensionality reduction 
+
+## PCA 
+With the gene expression for different tissues and models, perform a PCA on the data and visualize the results (PC1 and PC2, and also, PC3 ). Label the points in the plot with their respective tissues/models. 
+
+```{r}
+
+```
+
+
+Visualize the data using the PC1 and PC2 again, but this time, color the observations by cluster, using the k means clusters, with k of your choice. Produce a caption for the plot
+
+
+```{r}
+
+```
+
+
+What are the top 50 genes that contribute to the PC1? Are they the same genes that are more variable according to the exercise 1?
+
+
+```{r}
+
+```
+
+## tSNE 
+
+Perform t-SNE on the dataset and visualize the results. Test at least 2 perplexity values.
+
+
+
+```{r}
+
+```
+
+
+
+# session info {.unnumbered}
+
+```{r, results='asis',  echo=FALSE, message=FALSE }
+sessionInfo()
+```
