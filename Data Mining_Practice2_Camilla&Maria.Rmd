@@ -1,0 +1,480 @@
+---
+title: "Data Mining - Practice 2"
+author: "Camilla Lo Conte and Maria Puig"
+date: "2023-03-06"
+---
+
+```{r}
+
+##LIBRARIES####
+library(dplyr)
+library(tidyr)
+library(readxl)
+library(readr)
+library(stringr) 
+library(tidyverse)
+library(data.table)
+library(reshape2)
+library(ggpubr)
+library(plotrix)
+library(ggplot2)
+library(gplots)
+library(tibble)
+library(caret)
+library(car)
+library(factoextra)
+library(cluster)
+library(simstudy)
+library(PerformanceAnalytics)
+library(corrr)
+library(FactoMineR)
+library(corrplot)
+library(Rtsne)
+
+```
+
+#0. LOAD DATA####
+
+
+##__0.1 Mouse Dataset ####
+```{r}
+##__0.1 Mouse Dataset ####
+#load the database
+mouse_db<- read.delim(file="/Users/mariapuig/Desktop/mouse_tpm.txt")
+
+#convert the row names to a column with Id as a title
+mouse_db <-tibble::rownames_to_column(mouse_db, "Id")
+
+#shorten the column names and put them in lowercase
+long_names_mouse <- colnames(mouse_db)
+names(mouse_db) <-lapply(
+  X = strsplit(x = long_names_mouse, split = "_"),
+  FUN = function(x) paste0(tail(x, n = 1)))#The function takes each column name and splits it into a vector of substrings using the _ character as the separator. The strsplit() function is used to split each column name.The FUN argument in the lapply() function specifies a function to apply to each element of the long_names_mouse vector. In this case, the function takes the last element of each substring vector (using the tail() function) and concatenates them using the paste0() function. This effectively removes all substrings except for the last one, which is assumed to be the name of the variable. 
+
+names(mouse_db) <- tolower(names(mouse_db))
+
+#Duplicated column names - this way we have the duplicated names as .1, .2, .3.... 
+mouse_db<- mouse_db[,] 
+
+
+#Do the mean of the duplicated columns (mean between the tissues that have the same name). Compute means and remove duplicated columns once the mean is calculated
+  
+# First, identify the duplicated organ columns
+duplicated_cols <- unique(grep("\\.\\d+$", colnames(mouse_db), value = TRUE))#search for matches of the column names that have a point and a number (.#) (they are the duplicated ones)
+
+# Loop over the duplicated columns with the same name, compute the means, and remove the duplicate columns
+for (col in duplicated_cols) {
+  base_col_name <- gsub("\\.\\d+$", "", col)
+  selected_cols <- grep(paste0("^", base_col_name, "\\.\\d+$"), colnames(mouse_db))
+  
+  # Check whether there is more than one selected column
+  if (length(selected_cols) > 1) {
+    mean_col <- rowMeans(mouse_db[, selected_cols], na.rm = TRUE)
+    mouse_db[, base_col_name] <- mean_col
+    mouse_db <- mouse_db[, !grepl(paste0("^", base_col_name, "\\.\\d+$"), colnames(mouse_db))]
+  }
+}
+#this identifies duplicated columns in the mouse_db, calculates the row means of the duplicated columns, and removes the duplicated columns while retaining the mean values in a new column with the same base column name. This operation ensures that each column in the mouse_db data base contains unique variable names without any duplicate suffixes.
+
+#rename column name --> "_mouse". Add _mouse to the tissue for later differenciate the specie of the tissue
+colnames(mouse_db) <- paste0(colnames(mouse_db), "_mouse")
+
+colnames(mouse_db)
+
+```
+
+##__0.2 Rat Dataset ####
+
+```{r}
+#same steps as the mouse dataset, but with the dades of the rat database
+
+rat_db <- read.delim(file="/Users/mariapuig/Desktop/rat_tpm.txt")
+
+rat_db <-tibble::rownames_to_column(rat_db, "Id")
+
+long_names_rat <- colnames(rat_db)
+
+names(rat_db) <-lapply(
+  X = strsplit(x = long_names_rat, split = "_"),
+  FUN = function(x) paste0(tail(x, n = 1)))
+
+names(rat_db) <- tolower(names(rat_db))
+
+#the rat dataset has an unknown column that does not correspont to any tissue, we have to remove it
+rat_db<- rat_db[,-41] 
+
+#to joint mouse and rat datasets, they have to have the same column names - rename some columns 
+names(rat_db)[names(rat_db) == "kidneys"] <- "kidney"
+names(rat_db)[names(rat_db) == "kidneys.1"] <- "kidney.1"
+names(rat_db)[names(rat_db) == "kidneys.2"] <- "kidney.2"
+
+
+# Identify the duplicated organ columns
+duplicated_cols <- unique(grep("\\.\\d+$", colnames(rat_db), value = TRUE))
+# Loop over the duplicated columns, compute the means, and remove the duplicate columns
+for (col in duplicated_cols) {
+  base_col_name <- gsub("\\.\\d+$", "", col)
+  selected_cols <- grep(paste0("^", base_col_name, "\\.\\d+$"), colnames(rat_db))
+
+# Check whether there is more than one selected column
+  if (length(selected_cols) > 1) {
+    mean_col <- rowMeans(rat_db[, selected_cols], na.rm = TRUE)
+    rat_db[, base_col_name] <- mean_col
+   rat_db <- rat_db[, !grepl(paste0("^", base_col_name, "\\.\\d+$"), colnames(rat_db))]
+  }
+}
+
+colnames(rat_db) <- paste0(colnames(rat_db), "_rat")
+colnames(rat_db)
+
+```
+
+
+##__0.3 Gtex dataset- Human####
+
+```{r}
+
+gtex_db<-read.delim(file="/Users/mariapuig/Desktop/GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_median_tpm.txt",skip=2)
+#skip 2 lines beacuse the txt file has 2 additional rows that unable the code to read the file. The data that we want start at line 3 (skipping the first 2 lines)
+
+
+# remove the dots between the names of the columns 
+names(gtex_db) <- gsub("[.]", " ", names(gtex_db))
+names(gtex_db) <- gsub('[..]', " ", names(gtex_db))
+names(gtex_db) <- gsub('[...]', " ", names(gtex_db))
+
+# convert the names to lowercase
+names(gtex_db) <- tolower(names(gtex_db))
+
+#remove the ".number" of the ID to be able to join them with the rat & mouse datasets by the id 
+#the human datasets, the genes have an additional number in the id (to be able to compare it we need to remove it)
+#first we separate the id and the last number in 2 columns (id and number) and then remove the columns we don't want from our dataframe (name, numero and description)
+gtex_db<- separate(gtex_db,col = "name",into = c("id","numero"),sep = "[.]", remove = F)
+gtex_db<- gtex_db[, !names(gtex_db) %in% c("name", "numero","description")]
+
+
+#Select the organs we want 
+gtex_db <- gtex_db%>%
+  select(c("id","colon   transverse","colon   sigmoid", "pancreas", "liver", "stomach",  "kidney   medulla","kidney   cortex", "heart   left ventricle" ,"heart   atrial appendage","esophagus   gastroesophageal junction","esophagus   muscularis","esophagus   mucosa", "brain   amygdala", "brain   anterior cingulate cortex  ba24 " , "brain   caudate  basal ganglia ", "brain   cerebellar hemisphere","brain   cerebellum", "brain   cortex", "brain   frontal cortex  ba9 ", "brain   hippocampus", "brain   hypothalamus","brain   nucleus accumbens  basal ganglia " ,"brain   putamen  basal ganglia ", "brain   spinal cord  cervical c 1 ", "brain   substantia nigra","small intestine   terminal ileum"  , "muscle   skeletal"))
+
+colnames(gtex_db) <- paste0(colnames(gtex_db), "_human")
+colnames(gtex_db)
+
+```
+
+
+
+##__0.4 Gens in comun####
+
+```{r}
+#Join all the datasets by ID (gens in comun)
+
+#load the gens in comun 
+biomart_id<- read.delim(file="/Users/mariapuig/Desktop/mart_export.txt")
+
+
+colnames(biomart_id) 
+#change column names
+# remove dots and substitute for a space, and put the names in lowercase 
+names(biomart_id) <- gsub("[.]", " ", names(biomart_id))
+names(biomart_id) <- tolower(names(biomart_id))
+
+#remove the duplicated column of IDs
+biomart_id<- biomart_id[, !names(biomart_id) %in% "gene stable id version"]
+
+#Select all the comun IDs (the ones that are in the 3 species), rule out the rows that do not have the 3 id of the 3 species
+
+#There is boxes where there is no number, but there is not a NA,therefore we can't select the boxes where there is nothing 
+#conver nothing into NA 
+
+biomart_id[biomart_id == ""] <- NA
+biomart_id <- biomart_id[complete.cases(biomart_id), ]
+
+#change names of columns to:
+colnames(biomart_id) <- c("id_human","id_mouse","id_rat")
+
+#merge all the dataframes (mouse,rat and human) by the IDs
+
+all <- merge(biomart_id,mouse_db, by="id_mouse")
+all <- merge(all, rat_db, by = "id_rat")
+all<-  merge(all, gtex_db, by = "id_human")
+all_total<-all
+
+#eiminate datasets, values and functions that we don't need
+rm(biomart_id,gtex_db,mouse_db,rat_db,base_col_name, col, duplicated_cols, long_names_mouse, long_names_rat,mean_col)
+   
+
+```
+
+#1. EXERCISE 1####
+Cluster tissues using gene expression data. Run k-means and hierarchical clustering. For each algorithm, determine the optimal number of clusters. 
+Compare the clustering results using both methodologies, and with the tissues/species. Show the results of the final partitions as a table. 
+Plot a heatmap of the 50 genes with top variance over all samples.
+##__1.1 Cluster#### 
+
+```{r}
+# Calculate the standard deviation of each row to know which 50 genes have the bigger variance between all the tissues.
+all_total$sd <- apply(all_total[, 4:ncol(all_total)], 1, sd)
+
+#order the sd from big to small 
+gens50 <- all_total[order(-all_total$sd),]
+
+#get only the 50 first genes, as they are the ones that have the bigger standard deviations, and therefore the biggests variance between the tissues  
+gens50 <- gens50[1:50,]
+
+#eliminate de standard deviation column 
+gens50<- subset(gens50, select = -sd)
+
+#rename id_human to ID, and get rid of the other IDs (id_rat and id_mouse) as they are orthologos and we only need one identification. 
+gens50 <- gens50 %>% 
+  rename("id" = "id_human")
+gens50<- subset(gens50, select = -c(id_rat,id_mouse))
+
+
+#extract the expression values for each gene and assign them to a matrix:
+gens50 <- gens50[, -1] # exclude the ID column. To do a matrix we need all the values to be numbers. We remove the column ID because is not a number (text + numbers)
+
+#generte a matrix
+genes_mat <- as.matrix(gens50)
+
+#Standardize the matrix to have zero mean and unit variance
+genes_mat_std <- scale(genes_mat)
+
+#transpose as we want the analysis to be done in the tissues. The tissues (columns) go to  rows and the genes (rows) to columns
+genes_mat_std_t <- t(genes_mat_std)
+```
+
+Here we prepare the dataframe of the 50 genes that we are going to use to do the exersice 1. 
+
+
+##__1.2 K-means####
+
+```{r}
+
+#Determine the optimal number of clusters using the elbow method. See the inflection poitn to determine the number of clusters.
+wss_km <- numeric(10)
+for (i in 1:10) {
+  wss_km[i] <- sum(kmeans(genes_mat_std_t, centers = i)$withinss)
+}# This code performs k-means clustering on a standardized gene expression data matrix genes_mat_std_t for different numbers of clusters (from 1 to 10), and then calculates the within-cluster sum of squares (wss) for each clustering solution. We chose arbitrary 10 clusters as a maximum 
+
+# then it plots the elbow method for us to decide what is the optimal number of clusters. 
+
+plot(1:10, wss_km, type = "b", xlab = "Number of clusters", ylab = "Within-cluster sum of squares")
+
+## obtain 2 CLUSTERS because of the elbow method - previous plot shows us that the inflection point is 2. We could also do 3 or 4 clusters, but we chose 2 to do all the analysis, as the slope is of 3 and 4 is too small. 
+#Perform k-means clustering with k = 2 (optimal number of clusters)
+
+km<- kmeans(genes_mat_std_t, centers = 2, iter.max = 10, nstart = 10)# centers = clusters (put 2, or 3 if you want to visulazie different results)
+print(km)#information of the k-means clustering
+
+# Visualize the clusters using fviz_cluster()
+fviz_cluster(km, data = genes_mat_std_t, geom = "point")+
+  geom_text(aes(label = rownames(genes_mat_std_t)), size = 3, nudge_x = 0.1, nudge_y = 0.1)
+
+print(km$cluster)
+
+#visualize the plot with 2 clusters and 3 clusters 
+```
+As previouly mentioned in the code part, after analyzing the data of the plot of the elbow method, we determined that the ideal number of clusters is 2, although exploring 3 clusters could also provide valuable insights. 
+When we plot all the tissues, we observe that they naturally cluster into two groups. The red group is primarily composed of mouse tissues, while the blue group contains all the rat and human tissues, except for a few exceptions such as the pancreas of both rat and human, which fall into the red cluster with the mouse tissues. We can observe that the pancreat from the three species behave differnet than the rest of the tissues. 
+
+
+##__1.3 Hierarchical clustering#### 
+
+```{r}
+# Calculate the distance matrix using Euclidean distance method
+dist_mat <- dist(genes_mat_std_t, method="euclidean")
+
+# Generate a hierarchical clustering tree using Ward's method. Ward's method is a hierarchical clustering algorithm that aims to minimize the sum of squared distances between the observations and their cluster centroids.
+hc <- hclust(dist_mat, method="complete")
+
+# Plot the dendrogram to visually inspect for natural clusters. K = clusters (in this case 2 clusters)
+fviz_dend(hc, k = 2, cex = 0.5,scale="none")
+
+```
+
+The dendrogram is designed to show two clusters, which are displayed as two different colors. This makes it easier to understand the relationship between the different tissues. However, if we were to increase the number of clusters to three or four, the dendrogram would show different groupings that might not be as easy to interpret.
+
+The two clusters that the dendrogram displays represent two distinct groups. One group contains the pancreas from all three species (human, rat, and mouse), while the other group contains all the other tissues. If we were to use three clusters, the other group would be made up of the liver from both rat and mouse.
+
+From this, we can conclude that the pancreas is the tissue that is most similar across all three species and is different from the other tissues.
+
+##__1.4 Heatmap#### 
+
+```{r}
+# Generate the heatmap
+heatmap(genes_mat_std_t, margins=c(5,5), col=c("orange", "blue", "red"))
+
+rm(all,gens50, genes_mat,genes_mat_std,genes_mat_std_t,hc,km,dist_mat,i,wss_km)
+```
+
+For the heatmap, this is the result that we obtained, a of the 50 genes with top variance over all samples (genes). 
+
+# 2. EXERCISE 2####
+
+
+##__2.1Dimensional reduction ####
+
+PCA: With the gene expression for different tissues and models, perform a PCA on the data and visualize the results (PC1 and PC2, and also, PC3 ). Label the points in the plot with their respective tissues/models. 
+Visualize the data using the PC1 and PC2 again, but this time, color the observations by cluster, using the k means clusters, with k of your choice. Produce a caption for the plot
+What are the top 50 genes that contribute to the PC1? Are they the same genes that are more variable according to the exercise 1?
+
+```{r}
+
+pca <- all_total
+pca <- subset(pca, select = -c(id_human,id_rat,id_mouse))
+
+# Perform PCA on gene expression data
+
+pca_results <- prcomp(pca,scale. = TRUE)
+
+# Visualize the variance explained by each PC
+#The function fviz_pca_var() is part of the factoextra package in R and is used to visualize the results of a PCA. 
+
+fviz_pca_var(pca_results, col.var="contrib", 
+             gradient.cols = c("blue", "yellow", "red"), 
+             repel=TRUE)
+
+
+# Extract PC1, PC2, and PC3 values from PCA results
+
+pca_t<- t(pca)
+
+# #remove the constant/zero columns from the dataset before performing PCA. You can use the nearZeroVar() function from the caret package to identify the near-zero variance variables and remove them
+nzv <- nearZeroVar(pca_t)
+pca_t <- pca_t[, -nzv]
+pca_results_t <- prcomp(pca_t,scale. = TRUE)
+
+# select the principal components (1, 2 and 3)
+pc1 <- pca_results_t$x[,1]
+pc2 <- pca_results_t$x[,2]
+pc3 <- pca_results_t$x[,3]
+
+# Create data frame containing PC1, PC2, and PC3 values and labels
+# Transpose the PC1, PC2, and PC3 values to create a data frame with columns for PCs and rows for samples
+
+pca_df <- data.frame(pc1, pc2, pc3, labels = rownames(pca_t))
+
+# Create scatter plot of PC1 vs. PC2 with labels
+graphics.off()
+ggplot(pca_df, aes(x=pc1, y=pc2, label=labels)) + 
+  geom_point() + 
+  geom_text(hjust=0, vjust=0) +
+  labs(x="PC1", y="PC2")
+
+# Create scatter plot of PC1 vs. PC3 with labels
+ggplot(pca_df, aes(x=pc1, y=pc3, label=labels)) + 
+  geom_point() + 
+  geom_text(hjust=0, vjust=0) +
+  labs(x="PC1", y="PC3")
+
+
+# Create scatter plot of PC2 vs. PC3 with labels
+ggplot(pca_df, aes(x=pc2, y=pc3, label=labels)) + 
+  geom_point() + 
+  geom_text(hjust=0, vjust=0) +
+  labs(x="PC2", y="PC3")
+
+rm(pc1,pc2,pc3,pca_df,pca_results,pca_results_t,nzv)
+
+
+```
+
+NOTE: when we created the first plot using the "fviz_pca_var()" function to visualize the variance explained by each principal component, all the labels of the tissues are displayed corrected in a regular R script. That is why here show us the warning that the labels overlaps. 
+
+Moving on to the analysis, we used PCA and k-means clustering to analyze the gene expression data. The PCA plots show the contribution of each variable to the principal components. The size and color of the labels on the plots represent the level of contribution of each variable to the respective component. Larger and redder labels indicate a higher contribution, while smaller and bluer labels indicate a lower contribution.
+
+For the scatter plots, they show the distribution of the samples in the PC1 vs. PC2 space (and PC1 vs. PC3, and PC2 vs. PC3). Each point in the scatter plot represents a sample, and the labels indicate the corresponding tissue name.
+
+
+```{r}
+
+#do the same but differenciating the clusters by colors 
+
+# Perform PCA with scale
+pca_results <- prcomp(pca_t, scale. = TRUE)
+
+# Extract PC1, PC2 and PC3 scores for each sample
+#pc_scores that contains the firsts 3 PC from a the PCA stored in the dataframe "pca_results".
+pc_scores <- data.frame(pca_results$x[, 1:3])
+row.names(pc_scores) <- row.names(pca_t) # Add row names
+
+# Extract the cluster 
+k_clusters <- kmeans(pc_scores, centers = 2)#change 2 or 3 clusters  
+
+# Plot PC1 y PC2 , and we colored by cluster
+ggplot(pc_scores, aes(x = PC1, y = PC2, color = as.factor(k_clusters$cluster))) +
+  geom_point() +
+  geom_text(aes(label = row.names(pc_scores)), hjust = 0, vjust = 0) +
+  labs(title = "PCA of Gene Expression Data with K-Means Clustering", color = "Cluster")
+
+#The code then creates a scatter plot using ggplot2 library, where the x-axis is the first principal component (PC1), the y-axis is the second principal component (PC2), and the color of each point corresponds to the cluster assignment. 
+#The as.factor() function is used to convert the cluster assignments to factor levels so that ggplot recognizes them as categorical variables
+
+# Plot PC1 y PC3, and we colored by cluster
+ggplot(pc_scores, aes(x = PC1, y = PC3, color = as.factor(k_clusters$cluster))) +
+  geom_point() +
+  geom_text(aes(label = row.names(pc_scores)), hjust = 0, vjust = 0) +
+  labs(title = "PCA of Gene Expression Data with K-Means Clustering", color = "Cluster")
+
+# Plot PC2 y PC3,  and we colored by cluster
+ggplot(pc_scores, aes(x = PC2, y = PC3, color = as.factor(k_clusters$cluster))) +
+  geom_point() +
+  geom_text(aes(label = row.names(pc_scores)), hjust = 0, vjust = 0) +
+  labs(title = "PCA of Gene Expression Data with K-Means Clustering", color = "Cluster")
+
+rm(k_clusters,pc_scores,pca_results)
+
+```
+
+Here, these are the same plots as before, but with the addition of coloring based on the two identified clusters. When the tissues are differentiated by color, we can clearly see that they naturally cluster based on color, indicating logical clusters. This visual representation makes it easier to discern the differences between the two groups of tissues.
+
+
+##__2.2 tSNE####
+tSNE -- a way to do reduction of dimentions
+tSNE --> Perform t-SNE on the dataset and visualize the results. Test at least 2 perplexity values.
+
+```{r}
+# Remove duplicates from pca_std matrix 
+pca_std <- scale(pca_t, center = TRUE, scale = TRUE)
+pca_std <- pca_std[!duplicated(pca_std),]
+
+# Perform t-SNE with perplexity of 10 and 15 
+tsne_10 <- Rtsne(pca_std, perplexity = 10)
+tsne_15 <- Rtsne(pca_std, perplexity = 15)
+
+# Convert t-SNE results to data frames
+#perform t-Distributed Stochastic Neighbor Embedding (t-SNE) on a data matrix pca_std with a perplexity value of 10.
+
+# Convert t-SNE results to data frames and conserve row names
+tsne_df_10 <- cbind(data.frame(row.names(pca_std)), as.data.frame(tsne_10$Y))
+tsne_df_15 <- cbind(data.frame(row.names(pca_std)), as.data.frame(tsne_15$Y))
+
+tsne_df_10 <-tibble::column_to_rownames(tsne_df_10,"row.names.pca_std.")
+tsne_df_15 <-tibble::column_to_rownames(tsne_df_15,"row.names.pca_std.")
+
+
+# Visualize t-SNE results with perplexity of 10
+ggplot(tsne_df_10, aes(x = V1, y = V2, label = rownames(tsne_df_10))) + 
+  geom_point() + 
+  geom_text(hjust = 0, vjust = 0) +
+  ggtitle("t-SNE with perplexity = 10")
+
+
+# Visualize t-SNE results with perplexity of 15
+ggplot(tsne_df_15, aes(x = V1, y = V2, label = rownames(tsne_df_15))) + 
+  geom_point() + 
+  geom_text(hjust = 0, vjust = 0) +
+  ggtitle("t-SNE with perplexity = 15")
+
+
+rm(tsne_df_10,tsne_df_15,tsne_10,tsne_15,pca_std,pca,pca_t,all_total)
+```
+A t-SNE (t-Distributed Stochastic Neighbor Embedding) is a machine learning algorithm used for dimensionality reduction and visualization of high-dimensional data. The algorithm attempts to map high-dimensional data to a lower-dimensional space while preserving the structure of the data as much as possible.The perplexity is a hyperparameter in t-SNE that controls the balance between preserving global and local structure in the data. 
+It represents the effective number of neighbors of a data point that should be considered during the algorithm's optimization process.In practical terms, a lower perplexity value will place more emphasis on preserving the global structure of the data, while a higher perplexity value will place more emphasis on preserving local structure. 
+
+This result shows that the tissues can be grouped into two clusters. During the analysis, we tried different perplexity levels and found that values of 10 and 15 were successful. For values larger than these, the code did not work.
+
+
+
+
